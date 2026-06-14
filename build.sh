@@ -1,17 +1,16 @@
 #!/bin/bash
 set -e
 
-echo "==> Python version:"
-python3 --version
+VENV_DIR="/opt/render/project/src/appenv"
 
-echo "==> Python path:"
-which python3
+echo "==> Creating virtual environment at $VENV_DIR..."
+python3 -m venv "$VENV_DIR"
 
-echo "==> Installing dependencies..."
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
+echo "==> Installing dependencies into venv..."
+"$VENV_DIR/bin/pip" install --upgrade pip
+"$VENV_DIR/bin/pip" install -r requirements.txt
 
-echo "==> Verifying fastapi installation..."
-python3 -c "import fastapi; print(f'✓ FastAPI {fastapi.__version__} installed')"
+echo "==> Verifying installation..."
+"$VENV_DIR/bin/python" -c "import fastapi; print(f'FastAPI {fastapi.__version__} ready')"
 
 echo "==> Build complete!"
