@@ -59,6 +59,10 @@ def call_claude(prompt: str) -> str:
             else:
                 raise
         except APIError as e:
+            print(f"APIError: {type(e).__name__}: {str(e)}")
+            raise
+        except Exception as e:
+            print(f"Unexpected error in call_claude: {type(e).__name__}: {str(e)}")
             raise
     if last_error:
         raise last_error

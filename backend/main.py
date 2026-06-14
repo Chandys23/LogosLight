@@ -5,6 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from anthropic import RateLimitError, APIError
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from database import get_random_verse, get_verses_by_references, get_all_books, get_chapters_in_book, get_verses_in_chapter, search_verses
 from claude import get_verse_references, generate_emotion_devotional, generate_deep_study
@@ -64,25 +69,32 @@ def emotion_devotional(request: EmotionRequest):
     if len(emotion) < 2:
         raise HTTPException(status_code=400, detail="Please describe your emotion")
 
-    refs = get_verse_references(emotion)
-    verses = get_verses_by_references(refs)
-    if not verses:
-        raise HTTPException(status_code=500, detail="Could not load verses")
-
     try:
+        refs = get_verse_references(emotion)
+        verses = get_verses_by_references(refs)
+        if not verses:
+            raise HTTPException(status_code=500, detail="Could not load verses")
+
         result = generate_emotion_devotional(emotion, verses)
-    except RateLimitError:
+
+        return {
+            "emotion": emotion,
+            "verses": [{"reference": f"{v['book']} {v['chapter']}:{v['verse_number']}", "text": v["text"]} for v in verses],
+            "prayer": result["prayer"],
+            "encouragement": result["encouragement"],
+            "full_response": result["response"],
+        }
+    except RateLimitError as e:
+        logger.error(f"Rate limit error: {str(e)}")
         raise HTTPException(status_code=429, detail="API rate limit exceeded. Please try again in a moment.")
     except APIError as e:
+        logger.error(f"API error: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=503, detail=f"AI service temporarily unavailable: {str(e)}")
-
-    return {
-        "emotion": emotion,
-        "verses": [{"reference": f"{v['book']} {v['chapter']}:{v['verse_number']}", "text": v["text"]} for v in verses],
-        "prayer": result["prayer"],
-        "encouragement": result["encouragement"],
-        "full_response": result["response"],
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in emotion_devotional: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {type(e).__name__}")
 
 
 @app.post("/api/ai-study/search")
@@ -91,23 +103,30 @@ def ai_deep_study(request: StudyRequest):
     if len(topic) < 2:
         raise HTTPException(status_code=400, detail="Please provide a topic")
 
-    refs = get_verse_references(topic)
-    verses = get_verses_by_references(refs)
-    if not verses:
-        raise HTTPException(status_code=500, detail="Could not load verses")
-
     try:
+        refs = get_verse_references(topic)
+        verses = get_verses_by_references(refs)
+        if not verses:
+            raise HTTPException(status_code=500, detail="Could not load verses")
+
         result = generate_deep_study(topic, verses)
-    except RateLimitError:
+
+        return {
+            "topic": topic,
+            "verses": [{"reference": f"{v['book']} {v['chapter']}:{v['verse_number']}", "text": v["text"]} for v in verses],
+            "study_guide": result["response"],
+        }
+    except RateLimitError as e:
+        logger.error(f"Rate limit error: {str(e)}")
         raise HTTPException(status_code=429, detail="API rate limit exceeded. Please try again in a moment.")
     except APIError as e:
+        logger.error(f"API error: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=503, detail=f"AI service temporarily unavailable: {str(e)}")
-
-    return {
-        "topic": topic,
-        "verses": [{"reference": f"{v['book']} {v['chapter']}:{v['verse_number']}", "text": v["text"]} for v in verses],
-        "study_guide": result["response"],
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in ai_deep_study: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {type(e).__name__}")
 
 
 # Bible Reader Endpoints
