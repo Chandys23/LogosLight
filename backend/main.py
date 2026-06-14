@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from anthropic import RateLimitError, APIError
 
 from database import get_random_verse, get_verses_by_references, get_all_books, get_chapters_in_book, get_verses_in_chapter, search_verses
 from claude import get_verse_references, generate_emotion_devotional, generate_deep_study
@@ -68,7 +69,12 @@ def emotion_devotional(request: EmotionRequest):
     if not verses:
         raise HTTPException(status_code=500, detail="Could not load verses")
 
-    result = generate_emotion_devotional(emotion, verses)
+    try:
+        result = generate_emotion_devotional(emotion, verses)
+    except RateLimitError:
+        raise HTTPException(status_code=429, detail="API rate limit exceeded. Please try again in a moment.")
+    except APIError as e:
+        raise HTTPException(status_code=503, detail=f"AI service temporarily unavailable: {str(e)}")
 
     return {
         "emotion": emotion,
@@ -90,7 +96,12 @@ def ai_deep_study(request: StudyRequest):
     if not verses:
         raise HTTPException(status_code=500, detail="Could not load verses")
 
-    result = generate_deep_study(topic, verses)
+    try:
+        result = generate_deep_study(topic, verses)
+    except RateLimitError:
+        raise HTTPException(status_code=429, detail="API rate limit exceeded. Please try again in a moment.")
+    except APIError as e:
+        raise HTTPException(status_code=503, detail=f"AI service temporarily unavailable: {str(e)}")
 
     return {
         "topic": topic,

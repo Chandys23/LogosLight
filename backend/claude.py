@@ -1,5 +1,7 @@
 import os
+import time
 import anthropic
+from anthropic import RateLimitError, APIError
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
@@ -10,6 +12,8 @@ if not api_key:
 
 client = anthropic.Anthropic(api_key=api_key)
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-haiku-20240307")
+MAX_RETRIES = 3
+RETRY_DELAY = 2
 
 # Simple, hardcoded verse map (proven to exist in database)
 VERSE_MAP = {
@@ -36,13 +40,28 @@ VERSE_MAP = {
 }
 
 def call_claude(prompt: str) -> str:
-    """Call Claude and return text response."""
-    message = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return message.content[0].text
+    """Call Claude with retry logic for rate limits."""
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            message = client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return message.content[0].text
+        except RateLimitError as e:
+            last_error = e
+            if attempt < MAX_RETRIES - 1:
+                wait_time = RETRY_DELAY * (2 ** attempt)
+                print(f"Rate limited. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                raise
+        except APIError as e:
+            raise
+    if last_error:
+        raise last_error
 
 
 def _extract_section(response: str, section_name: str) -> str:
