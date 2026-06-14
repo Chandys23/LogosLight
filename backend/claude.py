@@ -11,7 +11,7 @@ if not api_key:
     raise ValueError("ANTHROPIC_API_KEY not found")
 
 client = anthropic.Anthropic(api_key=api_key)
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-haiku-20240307")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-4-1")
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 
