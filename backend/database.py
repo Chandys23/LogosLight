@@ -15,11 +15,12 @@ supabase = create_client(
 
 
 def get_random_verse() -> dict | None:
-    """Get a random verse using a server-side SQL RANDOM() call — does NOT load all rows."""
+    """Get a random verse by fetching all and picking one randomly in Python."""
     try:
-        response = supabase.rpc("get_random_verse").execute()
+        import random
+        response = supabase.table("verses").select("book,chapter,verse_number,text").execute()
         if response.data:
-            verse = response.data[0]
+            verse = random.choice(response.data)
             return {
                 "book": verse["book"],
                 "chapter": verse["chapter"],
