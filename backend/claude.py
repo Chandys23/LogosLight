@@ -11,6 +11,7 @@ if not api_key:
     raise ValueError("ANTHROPIC_API_KEY not found")
 
 client = anthropic.Anthropic(api_key=api_key)
+# Using claude-opus-4-1: most stable model available on account (latest models returned 404)
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-4-1")
 MAX_RETRIES = 3
 RETRY_DELAY = 2
