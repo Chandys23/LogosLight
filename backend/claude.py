@@ -9,7 +9,7 @@ if not api_key:
     raise ValueError("ANTHROPIC_API_KEY not found")
 
 client = anthropic.Anthropic(api_key=api_key)
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-haiku-20240307")
 
 # Simple, hardcoded verse map (proven to exist in database)
 VERSE_MAP = {
