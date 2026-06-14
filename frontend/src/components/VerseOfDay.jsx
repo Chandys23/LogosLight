@@ -10,46 +10,56 @@ export default function VerseOfDay() {
   useEffect(() => {
     verseService.getVerseOfDay()
       .then((r) => setVerse(r.data))
-      .catch(() => setError('Could not load today\'s verse. Please refresh.'))
+      .catch(() => setError('Could not load verse. Please try refreshing.'))
       .finally(() => setLoading(false))
   }, [])
 
   if (loading) return <LoadingSpinner message="Loading today's verse..." />
 
   if (error) return (
-    <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-6 text-center my-8">
-      {error}
+    <div className="bg-red-500/20 border border-red-500/40 text-red-300 rounded-xl p-6 text-center my-8">
+      <p>{error}</p>
+      <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-red-500/30 hover:bg-red-500/50 rounded-lg text-sm">
+        Refresh
+      </button>
     </div>
   )
 
   return (
-    <div className="bg-gradient-to-br from-faith-blue to-[#2a5298] text-white rounded-2xl shadow-2xl p-8 md:p-12 my-8 text-center">
-      <p className="text-xs tracking-[0.2em] uppercase text-divine-gold font-semibold mb-6">
+    <div className="bg-gradient-to-br from-purple-900/40 via-slate-800/40 to-purple-900/40 border border-purple-500/30 text-white rounded-2xl shadow-2xl p-10 md:p-14 my-8 text-center backdrop-blur-md animate-fadeIn">
+      <p className="text-xs tracking-widest uppercase text-amber-300/80 font-semibold mb-8">
         ✦ Verse of the Day ✦
       </p>
 
-      <blockquote className="font-scripture text-xl md:text-3xl leading-relaxed italic mb-6 text-spirit-cream">
+      <blockquote className="text-xl md:text-3xl leading-relaxed italic mb-8 text-gray-100 font-serif">
         "{verse.text}"
       </blockquote>
 
-      <p className="font-semibold text-divine-gold text-lg mb-8">
+      <p className="font-semibold text-amber-400 text-lg mb-12">
         — {verse.reference}
       </p>
 
-      <div className="grid md:grid-cols-2 gap-4 text-left">
-        <div className="bg-white/10 backdrop-blur rounded-xl p-5">
-          <p className="font-semibold text-divine-gold mb-2 text-sm uppercase tracking-wide">
-            Reflection
+      <div className="grid md:grid-cols-2 gap-6 text-left">
+        <div className="bg-slate-700/30 backdrop-blur rounded-xl p-6 border border-purple-500/20">
+          <p className="font-semibold text-purple-300 mb-3 text-sm uppercase tracking-wide">
+            💭 Reflection
           </p>
-          <p className="text-sm text-spirit-cream/90 leading-relaxed">{verse.reflection}</p>
+          <p className="text-sm text-purple-100/80 leading-relaxed">{verse.reflection}</p>
         </div>
-        <div className="bg-white/10 backdrop-blur rounded-xl p-5">
-          <p className="font-semibold text-divine-gold mb-2 text-sm uppercase tracking-wide">
-            Apply Today
+        <div className="bg-amber-900/20 backdrop-blur rounded-xl p-6 border border-amber-500/20">
+          <p className="font-semibold text-amber-300 mb-3 text-sm uppercase tracking-wide">
+            ⚡ Apply Today
           </p>
-          <p className="text-sm text-spirit-cream/90 leading-relaxed">{verse.apply_today}</p>
+          <p className="text-sm text-amber-100/80 leading-relaxed">{verse.apply_today}</p>
         </div>
       </div>
+
+      <button
+        onClick={() => window.location.reload()}
+        className="mt-10 px-6 py-3 bg-gradient-to-r from-amber-500/50 to-amber-600/50 hover:from-amber-500 hover:to-amber-600 rounded-lg font-semibold text-white transition-all duration-200"
+      >
+        🔄 Get Another Verse
+      </button>
     </div>
   )
 }

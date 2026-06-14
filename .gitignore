@@ -8,6 +8,7 @@ venv/
 *.egg-info/
 
 # Environment secrets — NEVER commit these
+.env.local
 backend/.env
 frontend/.env
 frontend/.env.production

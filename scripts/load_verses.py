@@ -59,19 +59,40 @@ def main():
         data = json.load(f)
 
     verses = []
-    total_books = len(data)
-    for i, book in enumerate(data, 1):
-        print(f"  Parsing [{i:2}/{total_books}] {book['name']}")
-        for ch_num, chapter in enumerate(book["chapters"], 1):
-            for v_num, text in enumerate(chapter, 1):
-                if text.strip():
-                    verses.append({
-                        "book":         book["name"],
-                        "chapter":      ch_num,
-                        "verse_number": v_num,
-                        "text":         text.strip(),
-                        "version":      "KJV",
-                    })
+    
+    # Handle both dict and list formats
+    if isinstance(data, dict):
+        # Dict format: {"BookName": {"chapters": {"1": {"1": "verse text"}}}}
+        books = list(data.items())
+        total_books = len(books)
+        for i, (book_name, book_data) in enumerate(books, 1):
+            print(f"  Parsing [{i:2}/{total_books}] {book_name}")
+            chapters = book_data.get("chapters", {})
+            for ch_num, verses_dict in chapters.items():
+                for v_num, text in verses_dict.items():
+                    if text and text.strip():
+                        verses.append({
+                            "book":         book_name,
+                            "chapter":      int(ch_num),
+                            "verse_number": int(v_num),
+                            "text":         text.strip(),
+                            "version":      "KJV",
+                        })
+    else:
+        # List format: [{"name": "Genesis", "chapters": [...]}]
+        total_books = len(data)
+        for i, book in enumerate(data, 1):
+            print(f"  Parsing [{i:2}/{total_books}] {book['name']}")
+            for ch_num, chapter in enumerate(book["chapters"], 1):
+                for v_num, text in enumerate(chapter, 1):
+                    if text.strip():
+                        verses.append({
+                            "book":         book["name"],
+                            "chapter":      ch_num,
+                            "verse_number": v_num,
+                            "text":         text.strip(),
+                            "version":      "KJV",
+                        })
 
     print(f"\nParsed {len(verses):,} verses")
 

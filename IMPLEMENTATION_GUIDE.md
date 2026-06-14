@@ -15,9 +15,10 @@
 5. [Database Schema](#database-schema)
 6. [API Specifications](#api-specifications)
 7. [Frontend Implementation](#frontend-implementation)
-8. [Deployment Guide](#deployment-guide)
-9. [Testing Strategy](#testing-strategy)
-10. [Timeline & Milestones](#timeline--milestones)
+8. [KJV Bible Reader Feature](#kjv-bible-reader-feature)
+9. [Deployment Guide](#deployment-guide)
+10. [Testing Strategy](#testing-strategy)
+11. [Timeline & Milestones](#timeline--milestones)
 
 ---
 
@@ -34,6 +35,7 @@
 |  |  - Home (Verse of the Day Banner)                             | |
 |  |  - Emotion-Based Devotional (open input)                      | |
 |  |  - AI Deep Study Guide                                        | |
+|  |  - KJV Bible Reader (browse, search, read full scriptures)    | |
 |  +--------------------------------------------------------------+ |
 +------------------------------------------------------------------+
                             |
@@ -47,6 +49,10 @@
 |  |  - GET  /api/verses/verse-of-day                          |    |
 |  |  - POST /api/devotional/emotion                           |    |
 |  |  - POST /api/ai-study/search                              |    |
+|  |  - GET  /api/bible/books (list all books)                 |    |
+|  |  - GET  /api/bible/{book}/chapters (chapters in book)     |    |
+|  |  - GET  /api/bible/{book}/{chapter} (verses in chapter)   |    |
+|  |  - GET  /api/bible/search (full-text search verses)       |    |
 |  |  - GET  /api/health                                       |    |
 |  +-----------------------------------------------------------+    |
 |                     |                    |                         |
@@ -1154,6 +1160,504 @@ API Docs:     http://localhost:8000/docs
 ```json
 { "detail": "Please describe your emotion" }     // 400
 { "detail": "Could not load verses" }            // 500
+```
+
+---
+
+## KJV Bible Reader Feature
+
+### Overview
+
+The KJV Bible Reader allows users to browse the complete King James Version of the Bible directly within LogosLight. Users can:
+- **Browse Books** - See all 66 books of the Bible (OT & NT)
+- **Navigate Chapters** - View all chapters in a book
+- **Read Verses** - Display all verses in a chapter with beautiful formatting
+- **Search Scripture** - Full-text search across all 31,102 verses
+- **Quick Jump** - Jump to favorite books/chapters
+
+### Backend Implementation
+
+#### New Database Queries (database.py)
+
+Add these functions to `backend/database.py`:
+
+```python
+def get_all_books() -> list[dict]:
+    """Get unique list of all books with verse count."""
+    response = supabase.table('verses') \
+        .select('book, chapter') \
+        .order('book') \
+        .execute()
+    
+    books = {}
+    for row in response.data:
+        if row['book'] not in books:
+            books[row['book']] = 1
+    
+    # Count verses per book (cached from response)
+    book_list = []
+    for book in books.keys():
+        count_resp = supabase.table('verses') \
+            .select('id', count='exact') \
+            .eq('book', book) \
+            .execute()
+        book_list.append({
+            'book': book,
+            'verse_count': count_resp.count
+        })
+    
+    return book_list
+
+def get_chapters_in_book(book: str) -> list[int]:
+    """Get all chapter numbers for a book."""
+    response = supabase.table('verses') \
+        .select('chapter') \
+        .eq('book', book) \
+        .order('chapter') \
+        .execute()
+    
+    chapters = sorted(list(set([r['chapter'] for r in response.data])))
+    return chapters
+
+def get_verses_in_chapter(book: str, chapter: int) -> list[dict]:
+    """Get all verses in a specific chapter."""
+    response = supabase.table('verses') \
+        .select('book, chapter, verse_number, text') \
+        .eq('book', book) \
+        .eq('chapter', chapter) \
+        .order('verse_number') \
+        .execute()
+    
+    return response.data
+
+def search_verses(query: str, limit: int = 50) -> list[dict]:
+    """Full-text search across all verses."""
+    response = supabase.table('verses') \
+        .select('book, chapter, verse_number, text') \
+        .ilike('text', f'%{query}%') \
+        .limit(limit) \
+        .execute()
+    
+    return response.data
+```
+
+#### New FastAPI Endpoints (main.py)
+
+Add these routes to `backend/main.py`:
+
+```python
+@app.get("/api/bible/books")
+def get_bible_books():
+    """Get list of all books in the KJV Bible."""
+    books = get_all_books()
+    return {
+        "total_books": len(books),
+        "books": books
+    }
+
+@app.get("/api/bible/{book}/chapters")
+def get_book_chapters(book: str):
+    """Get all chapter numbers for a book."""
+    chapters = get_chapters_in_book(book)
+    if not chapters:
+        raise HTTPException(status_code=404, detail=f"Book '{book}' not found")
+    
+    return {
+        "book": book,
+        "total_chapters": len(chapters),
+        "chapters": chapters
+    }
+
+@app.get("/api/bible/{book}/{chapter}")
+def get_chapter_verses(book: str, chapter: int):
+    """Get all verses in a chapter."""
+    verses = get_verses_in_chapter(book, chapter)
+    if not verses:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"{book} {chapter} not found"
+        )
+    
+    return {
+        "reference": f"{book} {chapter}",
+        "total_verses": len(verses),
+        "verses": [
+            {
+                "verse": v['verse_number'],
+                "text": v['text']
+            }
+            for v in verses
+        ]
+    }
+
+@app.get("/api/bible/search")
+def search_bible(q: str = None):
+    """Full-text search the Bible."""
+    if not q or len(q.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Search query too short")
+    
+    verses = search_verses(q.strip(), limit=50)
+    return {
+        "query": q,
+        "results_count": len(verses),
+        "verses": [
+            {
+                "reference": f"{v['book']} {v['chapter']}:{v['verse_number']}",
+                "text": v['text']
+            }
+            for v in verses
+        ]
+    }
+```
+
+### Frontend Implementation
+
+#### Bible Reader Component (src/components/BibleReader.jsx)
+
+```jsx
+import { useState, useEffect } from 'react'
+import axios from 'axios'
+import LoadingSpinner from './LoadingSpinner'
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+export default function BibleReader() {
+  const [books, setBooks] = useState([])
+  const [selectedBook, setSelectedBook] = useState('')
+  const [chapters, setChapters] = useState([])
+  const [selectedChapter, setSelectedChapter] = useState(null)
+  const [verses, setVerses] = useState([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [mode, setMode] = useState('browse') // 'browse' or 'search'
+  const [error, setError] = useState(null)
+
+  // Fetch all books on mount
+  useEffect(() => {
+    const fetchBooks = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/api/bible/books`)
+        setBooks(res.data.books)
+        if (res.data.books.length > 0) {
+          setSelectedBook(res.data.books[0].book)
+        }
+      } catch (err) {
+        setError('Failed to load Bible books')
+      }
+    }
+    fetchBooks()
+  }, [])
+
+  // Fetch chapters when book is selected
+  useEffect(() => {
+    if (selectedBook) {
+      const fetchChapters = async () => {
+        try {
+          const res = await axios.get(`${API_BASE}/api/bible/${selectedBook}/chapters`)
+          setChapters(res.data.chapters)
+          setSelectedChapter(1)
+          setVerses([])
+        } catch (err) {
+          setError(`Failed to load chapters for ${selectedBook}`)
+        }
+      }
+      fetchChapters()
+    }
+  }, [selectedBook])
+
+  // Fetch verses when chapter is selected
+  useEffect(() => {
+    if (selectedBook && selectedChapter) {
+      const fetchVerses = async () => {
+        setLoading(true)
+        try {
+          const res = await axios.get(`${API_BASE}/api/bible/${selectedBook}/${selectedChapter}`)
+          setVerses(res.data.verses)
+          setError(null)
+        } catch (err) {
+          setError(`Failed to load chapter`)
+        } finally {
+          setLoading(false)
+        }
+      }
+      fetchVerses()
+    }
+  }, [selectedBook, selectedChapter])
+
+  // Handle search
+  const handleSearch = async () => {
+    if (searchQuery.trim().length < 2) return
+    
+    setLoading(true)
+    setMode('search')
+    try {
+      const res = await axios.get(`${API_BASE}/api/bible/search`, {
+        params: { q: searchQuery }
+      })
+      setSearchResults(res.data.verses)
+      setError(null)
+    } catch (err) {
+      setError('Search failed or no results found')
+      setSearchResults([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white">
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        
+        {/* Header */}
+        <div className="mb-8">
+          <h2 className="text-4xl font-bold bg-gradient-to-r from-amber-300 via-purple-300 to-blue-300 bg-clip-text text-transparent mb-2">
+            📖 KJV Bible
+          </h2>
+          <p className="text-purple-300/60">Read the complete King James Version</p>
+        </div>
+
+        {/* Mode Tabs */}
+        <div className="flex gap-2 mb-6 border-b border-purple-700/30">
+          <button
+            onClick={() => setMode('browse')}
+            className={`px-4 py-3 font-medium transition-all ${
+              mode === 'browse'
+                ? 'border-b-2 border-amber-400 text-amber-300'
+                : 'text-purple-300/60 hover:text-purple-300'
+            }`}
+          >
+            Browse
+          </button>
+          <button
+            onClick={() => setMode('search')}
+            className={`px-4 py-3 font-medium transition-all ${
+              mode === 'search'
+                ? 'border-b-2 border-amber-400 text-amber-300'
+                : 'text-purple-300/60 hover:text-purple-300'
+            }`}
+          >
+            Search
+          </button>
+        </div>
+
+        {error && (
+          <div className="bg-red-500/20 border border-red-500/40 text-red-300 rounded-lg p-4 mb-6">
+            {error}
+          </div>
+        )}
+
+        {/* BROWSE MODE */}
+        {mode === 'browse' && (
+          <div className="space-y-6">
+            {/* Book Selector */}
+            <div className="glass-card p-6 border-purple-500/30">
+              <label className="block text-sm font-semibold text-purple-300 mb-3">
+                Select Book
+              </label>
+              <select
+                value={selectedBook}
+                onChange={(e) => setSelectedBook(e.target.value)}
+                className="w-full bg-slate-700/50 border border-purple-500/30 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-400"
+              >
+                {books.map((b) => (
+                  <option key={b.book} value={b.book}>
+                    {b.book} ({b.verse_count} verses)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Chapter Selector */}
+            {chapters.length > 0 && (
+              <div className="glass-card p-6 border-purple-500/30">
+                <label className="block text-sm font-semibold text-purple-300 mb-3">
+                  Select Chapter
+                </label>
+                <div className="grid grid-cols-6 md:grid-cols-10 gap-2">
+                  {chapters.map((ch) => (
+                    <button
+                      key={ch}
+                      onClick={() => setSelectedChapter(ch)}
+                      className={`px-3 py-2 rounded font-medium transition-all ${
+                        selectedChapter === ch
+                          ? 'bg-amber-500/50 text-white border-2 border-amber-400'
+                          : 'bg-slate-700/40 text-purple-200 hover:bg-slate-700/60'
+                      }`}
+                    >
+                      {ch}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Verses Display */}
+            {loading && <LoadingSpinner message="Loading chapter..." />}
+
+            {verses.length > 0 && !loading && (
+              <div className="glass-card p-8 border-purple-500/30">
+                <div className="text-center mb-8">
+                  <h3 className="text-2xl font-bold text-amber-300">
+                    {selectedBook} {selectedChapter}
+                  </h3>
+                </div>
+                <div className="space-y-4">
+                  {verses.map((v) => (
+                    <div key={v.verse} className="border-l-2 border-amber-400 pl-4">
+                      <p className="text-amber-300/80 text-sm font-semibold mb-1">
+                        Verse {v.verse}
+                      </p>
+                      <p className="text-gray-200 leading-relaxed italic">
+                        "{v.text}"
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SEARCH MODE */}
+        {mode === 'search' && (
+          <div className="space-y-6">
+            <div className="glass-card p-6 border-purple-500/30">
+              <label className="block text-sm font-semibold text-purple-300 mb-3">
+                Search Scripture
+              </label>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  placeholder="Search for words, topics, or verses..."
+                  className="flex-1 bg-slate-700/50 border border-purple-500/30 rounded-lg px-4 py-2 text-white placeholder-purple-300/50 focus:outline-none focus:border-purple-400"
+                />
+                <button
+                  onClick={handleSearch}
+                  disabled={loading || searchQuery.trim().length < 2}
+                  className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 disabled:opacity-40 text-white font-semibold px-6 py-2 rounded-lg transition-all"
+                >
+                  {loading ? 'Searching...' : 'Search'}
+                </button>
+              </div>
+            </div>
+
+            {loading && <LoadingSpinner message="Searching Scripture..." />}
+
+            {searchResults.length > 0 && !loading && (
+              <div className="glass-card p-8 border-blue-500/30">
+                <h3 className="text-xl font-bold text-blue-300 mb-6">
+                  Found {searchResults.length} verses
+                </h3>
+                <div className="space-y-4 max-h-96 overflow-y-auto">
+                  {searchResults.map((v, idx) => (
+                    <div key={idx} className="border-l-2 border-blue-400 pl-4">
+                      <p className="text-blue-300/80 text-sm font-semibold mb-1">
+                        {v.reference}
+                      </p>
+                      <p className="text-gray-200 leading-relaxed italic">
+                        "{v.text}"
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!loading && searchResults.length === 0 && searchQuery.trim() && (
+              <div className="glass-card p-8 text-center border-blue-500/30">
+                <p className="text-purple-300/70">No verses found matching "{searchQuery}"</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+```
+
+#### Update App.jsx to Include Bible Reader
+
+Add a new tab to `src/App.jsx`:
+
+```jsx
+import BibleReader from './components/BibleReader'
+
+// In the navigation tabs array, add:
+{ id: 'bible', label: '📖 Bible Reader', icon: '📕' },
+
+// In the main content section, add:
+{page === 'bible' && <BibleReader />}
+```
+
+### API Response Examples
+
+**GET /api/bible/books**
+```json
+{
+  "total_books": 66,
+  "books": [
+    { "book": "Genesis", "verse_count": 1533 },
+    { "book": "Exodus", "verse_count": 1213 },
+    ...
+    { "book": "Revelation", "verse_count": 404 }
+  ]
+}
+```
+
+**GET /api/bible/John/chapters**
+```json
+{
+  "book": "John",
+  "total_chapters": 21,
+  "chapters": [1, 2, 3, ..., 21]
+}
+```
+
+**GET /api/bible/John/3**
+```json
+{
+  "reference": "John 3",
+  "total_verses": 36,
+  "verses": [
+    {
+      "verse": 1,
+      "text": "There was a man of the Pharisees, named Nicodemus, a ruler of the Jews:"
+    },
+    {
+      "verse": 2,
+      "text": "The same came to Jesus by night, and said unto him, Rabbi, we know that thou art a teacher come from God: for no man can do these miracles that thou doest, except God be with him."
+    },
+    ...
+    {
+      "verse": 16,
+      "text": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life."
+    }
+  ]
+}
+```
+
+**GET /api/bible/search?q=love**
+```json
+{
+  "query": "love",
+  "results_count": 50,
+  "verses": [
+    {
+      "reference": "John 3:16",
+      "text": "For God so loved the world, that he gave his only begotten Son..."
+    },
+    {
+      "reference": "1 John 4:8",
+      "text": "He that loveth not knoweth not God; for God is love."
+    }
+    ...
+  ]
+}
 ```
 
 ---
