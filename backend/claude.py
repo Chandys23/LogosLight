@@ -1,7 +1,6 @@
 import os
 import time
-import anthropic
-from anthropic import RateLimitError, APIError
+from anthropic import Anthropic, RateLimitError, APIError
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
@@ -10,7 +9,7 @@ api_key = os.getenv("ANTHROPIC_API_KEY")
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY not found")
 
-client = anthropic.Anthropic(api_key=api_key)
+client = Anthropic(api_key=api_key)
 # Using claude-opus-4-1: most stable model available on account (latest models returned 404)
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-4-1")
 MAX_RETRIES = 3
